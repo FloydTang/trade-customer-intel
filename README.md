@@ -1,16 +1,74 @@
 # Trade Customer Intel
 
-Open-source Codex skill for bilingual, evidence-backed public-web customer intelligence reports for foreign-trade leads.
+中英双语的开源 Codex Skill，用公开网页线索为外贸销售、客户开发和线索筛查生成结构化客户情报报告。
 
-It takes sparse lead data such as a company name, contact name, email, or website and turns it into a structured Markdown and JSON report for sales verification, account research, and conservative outreach preparation.
+An open-source Codex skill that turns sparse public-web signals into bilingual, structured customer intelligence reports for sales research, lead verification, and conservative outreach preparation.
 
-## What It Does
+## Why This Exists
 
-- Resolves company and contact identity from public-web evidence
-- Searches official sites, LinkedIn, Facebook, Instagram, X/Twitter, YouTube, and general web results
-- Produces a CRM-friendly bilingual report
-- Scores lead risk as `Low`, `Medium`, or `High`
-- Generates a conservative outreach persona card and English outreach pack when evidence is strong enough
+很多外贸线索只有公司名、联系人名、邮箱或手机号，公开信息分散、真假难辨，而且销售同事往往没有时间手工整理。
+
+This project exists to make that first-pass research faster and safer:
+
+- 用公开网页信息补全公司与联系人画像
+- 对弱证据保持保守，不把推断写成事实
+- 输出适合 CRM、销售协作和首轮触达的双语报告
+
+## What It Produces
+
+输入可以很稀疏，例如：
+
+```json
+{
+  "company_name": "Acme Industrial",
+  "person_name": "Jane Smith",
+  "email": "jane@acme-industrial.com",
+  "company_website": "",
+  "country_or_market": "United States",
+  "notes": ""
+}
+```
+
+输出会包含：
+
+- `Executive Summary / 执行摘要`
+- `Identity Snapshot / 身份快照`
+- `Company Profile / 公司画像`
+- `Digital Footprint / 数字足迹`
+- `Interest & Topic Signals / 主题信号`
+- `Sales Angles / 销售切入角度`
+- `Outreach Persona Card / 开发画像卡`
+- `Personalized Outreach Pack / 英文触达草稿`
+- `Risk Rating / 风险评级`
+- `Evidence / 证据清单`
+
+## Core Principles
+
+- Public web only
+- Conservative entity matching
+- Conservative risk scoring
+- No private-data claims
+- No invented personalization
+
+对应中文原则：
+
+- 只用公开网络信息
+- 实体匹配偏保守
+- 风险判断偏保守
+- 不暗示使用私有数据
+- 不捏造个性化信息
+
+## Search Workflow
+
+默认按这个顺序找证据：
+
+1. 官网与域名线索
+2. LinkedIn 公司页与个人页
+3. Facebook 与 Instagram
+4. X / Twitter 与 YouTube
+5. 通用网页搜索与新闻结果
+
+如果证据不足，仍然会出报告，但会明确降低置信度并提示人工复核。
 
 ## Repository Structure
 
@@ -31,22 +89,7 @@ It takes sparse lead data such as a company name, contact name, email, or websit
 
 ## Quick Start
 
-### 1. Prepare input
-
-Create a JSON file like this:
-
-```json
-{
-  "company_name": "Acme Industrial",
-  "person_name": "Jane Smith",
-  "email": "jane@acme-industrial.com",
-  "company_website": "",
-  "country_or_market": "United States",
-  "notes": ""
-}
-```
-
-### 2. Run the report builder
+### Run with a JSON file
 
 ```bash
 python3 ./scripts/build_customer_intel_report.py \
@@ -55,7 +98,7 @@ python3 ./scripts/build_customer_intel_report.py \
   --json-out /tmp/customer-intel.json
 ```
 
-Or pipe JSON directly:
+### Run by piping JSON
 
 ```bash
 cat <<'EOF' | python3 ./scripts/build_customer_intel_report.py
@@ -70,37 +113,47 @@ EOF
 
 ## Search Behavior
 
-- If `tvly` is installed, the script uses it first for search.
+- If `tvly` is installed, the script uses it first.
 - Otherwise it falls back to DuckDuckGo HTML search.
-- Page text snapshots use `r.jina.ai` when available.
-- When evidence is sparse, the script still generates a report and explicitly lowers confidence.
+- Page snapshots use `r.jina.ai` when available.
+- Sparse evidence still produces output, with lower confidence.
 
-## Output
+## Using It As a Codex Skill
 
-The generated report follows the structure in [references/report-template.md](./references/report-template.md), including:
+主要定义文件在 [SKILL.md](./SKILL.md)。
 
-- Executive summary in Chinese and English
-- Identity snapshot
-- Company profile
-- Digital footprint table
-- Interest and topic signals
-- Sales angles
-- Outreach persona card
-- Personalized outreach pack
-- Risk rating
-- Evidence log
+输出结构与来源规则分别在：
 
-## Design Principles
+- [references/report-template.md](./references/report-template.md)
+- [references/source-playbook.md](./references/source-playbook.md)
 
-- Public web only
-- Conservative entity matching
-- Conservative risk scoring
-- No private-data claims
-- No invented personalization
+代理配置在 [agents/openai.yaml](./agents/openai.yaml)。
 
-## Using It As a Skill
+## Suggested Use Cases
 
-This repository is structured as a Codex skill. The main skill definition lives in [SKILL.md](./SKILL.md), and the agent-facing metadata lives in [agents/openai.yaml](./agents/openai.yaml).
+- 外贸询盘首轮筛查
+- 销售开发前的公开信息核验
+- CRM 入库前的背景补全
+- 弱线索的官网/社媒/公司实体定位
+- 低风险线索的英文首触达草稿准备
+
+## Current Limits
+
+- 不是 KYC 或法律尽调工具
+- 不保证每次都能找到官网或社媒主页
+- 对同名联系人只做保守匹配
+- 需要人工审阅后再发送外部开发邮件
+
+## Open Source Notes
+
+This repository is intended to be practical and hackable:
+
+- 你可以直接改搜索策略
+- 你可以替换搜索源
+- 你可以接入 CRM 或自动化流程
+- 你也可以把报告模板改成更适合自己团队的版本
+
+欢迎 PR 和 issue。
 
 ## License
 
