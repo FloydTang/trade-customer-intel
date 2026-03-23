@@ -4,6 +4,15 @@
 
 An open-source Codex skill that turns sparse public-web signals into bilingual, structured customer intelligence reports for sales research, lead verification, and conservative outreach preparation.
 
+## Version Strategy
+
+这个仓库现在并行维护两套版本：
+
+- `classic`：当前根目录版本，面向 Codex / 本地 Python 直接运行
+- `for-openclaw`：面向云端 OpenClaw 的独立变体，使用 OpenClaw 工具编排搜索和抓取，再交给 Python 汇总器生成报告
+
+如果你要在 OpenClaw 中落地，请优先查看 [for-openclaw/README.md](./for-openclaw/README.md) 和 [for-openclaw/SKILL.md](./for-openclaw/SKILL.md)。
+
 ## Why This Exists
 
 很多外贸线索只有公司名、联系人名、邮箱或手机号，公开信息分散、真假难辨，而且销售同事往往没有时间手工整理。
@@ -82,6 +91,13 @@ This project exists to make that first-pass research faster and safer:
 │   └── source-playbook.md
 ├── scripts/
 │   └── build_customer_intel_report.py
+├── for-openclaw/
+│   ├── SKILL.md
+│   ├── README.md
+│   ├── examples/
+│   ├── references/
+│   ├── schemas/
+│   └── scripts/
 ├── examples/
 │   └── sample-input.json
 └── .github/
@@ -128,6 +144,17 @@ EOF
 - [references/source-playbook.md](./references/source-playbook.md)
 
 代理配置在 [agents/openai.yaml](./agents/openai.yaml)。
+
+## OpenClaw Variant
+
+`for-openclaw/` 是一个并行维护的 OpenClaw-native 版本：
+
+- 不替换当前 baseline
+- 不依赖 Tavily / DuckDuckGo HTML / r.jina.ai
+- 假设搜索由 `coze-web-search` 提供
+- 假设主抓取由 `scrapling-official` 提供
+- 假设抓取降级由 `coze-web-fetch` 提供
+- 假设 Python 只负责“证据驱动汇总”，不直接联网搜索
 
 ## Suggested Use Cases
 
