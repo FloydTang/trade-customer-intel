@@ -127,6 +127,27 @@ cat <<'EOF' | python3 ./scripts/build_customer_intel_report.py
 EOF
 ```
 
+## Feishu / OpenClaw Stage Export
+
+如果你只想单独使用客户背调 Skill，也建议把结果并入统一主表。
+
+在生成客户背调 JSON 后，再运行：
+
+```bash
+python3 ./scripts/build_feishu_stage_payload.py \
+  --input-json /tmp/customer-intel.json \
+  --combo-run-id manual-run \
+  --lead-id lead-001
+```
+
+这个脚本不会重新搜索或改写报告。
+
+它只负责把已有客户背调报告转成 OpenClaw 可消费的文档 payload，用于：
+
+- 创建或更新客户背调云文档
+- 回写 `Lead Workflow Master`
+- 支持“外部导入后直接跑背调”的单点接入方式
+
 ## Search Behavior
 
 - If `tvly` is installed, the script uses it first.
