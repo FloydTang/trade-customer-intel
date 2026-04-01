@@ -4,24 +4,82 @@
 
 An open-source Codex skill that turns sparse public-web signals into bilingual, structured customer intelligence reports for sales research, lead verification, and conservative outreach preparation.
 
-## Version Strategy
+当前状态：可演示
 
-这个仓库现在并行维护两套版本：
+角色定位：`客户情报分析员`
 
-- `classic`：当前根目录版本，面向 Codex / 本地 Python 直接运行
-- `for-openclaw`：面向云端 OpenClaw 的独立变体，使用 OpenClaw 工具编排搜索和抓取，再交给 Python 汇总器生成报告
+这个仓库的开源内容本身即可独立使用，飞书增强入口不是必需安装步骤，而是增强体验选项。
 
-如果你要在 OpenClaw 中落地，请优先查看 [for-openclaw/README.md](./for-openclaw/README.md) 和 [for-openclaw/SKILL.md](./for-openclaw/SKILL.md)。
+链路角色：
 
-## Why This Exists
+- 在总链路里是 `stage_worker`
+- 组合包 / 主代理是 `workflow_owner`
+- 单节点默认 `attach_only`
+- `feishu_container_creation = forbidden`
+- 单节点不独立声明飞书工作容器
+- 所有数据最终统一挂到同一个 `Trade Lead Workflow Hub`
 
-很多外贸线索只有公司名、联系人名、邮箱或手机号，公开信息分散、真假难辨，而且销售同事往往没有时间手工整理。
+上下游关系：
 
-This project exists to make that first-pass research faster and safer:
+- 上游：[trade-lead-screening](https://github.com/FloydTang/trade-lead-screening) 或人工提供的稀疏线索
+- 下游：[trade-outreach-email](https://github.com/FloydTang/trade-outreach-email)
 
-- 用公开网页信息补全公司与联系人画像
-- 对弱证据保持保守，不把推断写成事实
-- 输出适合 CRM、销售协作和首轮触达的双语报告
+## 公开最小可用说明
+
+这个仓库公开层只解决一个问题：
+
+- 把稀疏线索变成保守、可复核的客户情报报告
+- 和组合包一样，这个单节点仓库本身就拥有可独立执行的最小功能
+
+## 两种权益
+
+这个 Skill 当前分成两种使用权益：
+
+### 1. 开源权益
+
+- 直接使用当前 GitHub 仓库里的开源内容
+- 即插即用，适合先跑通最小版本
+- 适合自己阅读 README、运行脚本、替换样例和继续二次改造
+
+### 2. 增强权益
+
+- 在开源最小能力基础上，额外使用半斤九两科技提供的飞书增强执行词
+- 更适合龙虾 / OpenClaw 安装和执行
+- 使用体验会更精致、更完整，理解障碍和安装试错更少
+- 更容易和统一的 `Trade Lead Workflow Hub` 挂接
+
+当前最小能力：
+
+- 收集公开网页证据
+- 做实体匹配和风险判断
+- 输出结构化客户情报报告
+- 给出证据清单和销售切入角度
+
+## 飞书增强入口
+
+这个 Skill 的开源版本身就可以单独使用，并能完成当前节点的最小可用功能。
+
+如果你希望在龙虾 / OpenClaw 中获得更精致、更完整的使用体验，建议按下面流程复制增强执行词：
+
+- [飞书增强入口：复制增强执行词给龙虾](https://evenbetter.feishu.cn/wiki/ADmiwiultihx6Yk1p2UcjfmVn6d)
+
+如果链接打不开，请先确认使用和半斤九两科技会员群绑定的飞书账号登录。
+
+如果你暂时还没有绑定过，或当前还没有半斤九两科技的账号，请访问：[evenbetter.tech](https://evenbetter.tech)
+
+仓库内对应的源码基线在：
+
+- `references/00-单节点增强执行词.md`
+- `for-openclaw/README.md`
+- `for-openclaw/SKILL.md`
+
+## 推荐模型
+
+- `coze/doubao-seed-2-0-pro-260215`
+
+特殊情况：
+
+- 如果上下文特别长，或需要长上下文整合，可临时切到 `coze/kimi-k2-5-260127`
 
 ## What It Produces
 
@@ -46,66 +104,10 @@ This project exists to make that first-pass research faster and safer:
 - `Digital Footprint / 数字足迹`
 - `Interest & Topic Signals / 主题信号`
 - `Sales Angles / 销售切入角度`
-- `Outreach Persona Card / 开发画像卡`
-- `Personalized Outreach Pack / 英文触达草稿`
 - `Risk Rating / 风险评级`
 - `Evidence / 证据清单`
 
-## Core Principles
-
-- Public web only
-- Conservative entity matching
-- Conservative risk scoring
-- No private-data claims
-- No invented personalization
-
-对应中文原则：
-
-- 只用公开网络信息
-- 实体匹配偏保守
-- 风险判断偏保守
-- 不暗示使用私有数据
-- 不捏造个性化信息
-
-## Search Workflow
-
-默认按这个顺序找证据：
-
-1. 官网与域名线索
-2. LinkedIn 公司页与个人页
-3. Facebook 与 Instagram
-4. X / Twitter 与 YouTube
-5. 通用网页搜索与新闻结果
-
-如果证据不足，仍然会出报告，但会明确降低置信度并提示人工复核。
-
-## Repository Structure
-
-```text
-.
-├── SKILL.md
-├── agents/
-│   └── openai.yaml
-├── references/
-│   ├── report-template.md
-│   └── source-playbook.md
-├── scripts/
-│   └── build_customer_intel_report.py
-├── for-openclaw/
-│   ├── SKILL.md
-│   ├── README.md
-│   ├── examples/
-│   ├── references/
-│   ├── schemas/
-│   └── scripts/
-├── examples/
-│   └── sample-input.json
-└── .github/
-```
-
 ## Quick Start
-
-### Run with a JSON file
 
 ```bash
 python3 ./scripts/build_customer_intel_report.py \
@@ -113,8 +115,6 @@ python3 ./scripts/build_customer_intel_report.py \
   --markdown-out /tmp/customer-intel.md \
   --json-out /tmp/customer-intel.json
 ```
-
-### Run by piping JSON
 
 ```bash
 cat <<'EOF' | python3 ./scripts/build_customer_intel_report.py
@@ -148,64 +148,60 @@ python3 ./scripts/build_feishu_stage_payload.py \
 - 回写 `Lead Workflow Master`
 - 支持“外部导入后直接跑背调”的单点接入方式
 
-## Search Behavior
+## Chain Position
 
-- If `tvly` is installed, the script uses it first.
-- Otherwise it falls back to DuckDuckGo HTML search.
-- Page snapshots use `r.jina.ai` when available.
-- Sparse evidence still produces output, with lower confidence.
+推荐链路：
 
-## Using It As a Codex Skill
+`trade-lead-discovery -> trade-lead-screening -> trade-customer-intel -> trade-outreach-email`
 
-主要定义文件在 [SKILL.md](./SKILL.md)。
+关联仓库：
 
-输出结构与来源规则分别在：
+- 客户搜索 Skill: [trade-lead-discovery](https://github.com/FloydTang/trade-lead-discovery)
+- 线索整理 Skill: [trade-lead-screening](https://github.com/FloydTang/trade-lead-screening)
+- 开发信 Skill: [trade-outreach-email](https://github.com/FloydTang/trade-outreach-email)
 
-- [references/report-template.md](./references/report-template.md)
-- [references/source-playbook.md](./references/source-playbook.md)
+## Agent-First 增强价值
 
-代理配置在 [agents/openai.yaml](./agents/openai.yaml)。
+会员增强层当前不是改业务逻辑，而是补这几件事：
+
+- 单节点在龙虾里有明确的 `stage_worker` 角色
+- 单节点默认只 attach，不独立建飞书工作容器
+- 飞书里提供可直接复制给龙虾的增强执行词
+- 与总编排链路保持同一套文档复用、失败回报和协作口径
+
+## Repository Structure
+
+```text
+.
+├── README.md
+├── SKILL.md
+├── agents/
+│   └── openai.yaml
+├── references/
+│   ├── 00-单节点增强执行词.md
+│   ├── report-template.md
+│   └── source-playbook.md
+├── scripts/
+│   └── build_customer_intel_report.py
+├── for-openclaw/
+│   ├── SKILL.md
+│   ├── README.md
+│   ├── examples/
+│   ├── references/
+│   ├── schemas/
+│   └── scripts/
+├── examples/
+│   └── sample-input.json
+└── .github/
+```
 
 ## OpenClaw Variant
 
-`for-openclaw/` 是一个并行维护的 OpenClaw-native 版本：
+`for-openclaw/` 提供和总仓一致口径的单节点 OpenClaw 包装版本：
 
-- 不替换当前 baseline
-- 不依赖 Tavily / DuckDuckGo HTML / r.jina.ai
-- 假设搜索由 `coze-web-search` 提供
-- 假设主抓取由 `scrapling-official` 提供
-- 假设抓取降级由 `coze-web-fetch` 提供
-- 假设 Python 只负责“证据驱动汇总”，不直接联网搜索
-
-## Suggested Use Cases
-
-- 外贸询盘首轮筛查
-- 销售开发前的公开信息核验
-- CRM 入库前的背景补全
-- 弱线索的官网/社媒/公司实体定位
-- 低风险线索的英文首触达草稿准备
-
-## Current Limits
-
-- 不是 KYC 或法律尽调工具
-- 不保证每次都能找到官网或社媒主页
-- 对同名联系人只做保守匹配
-- 需要人工审阅后再发送外部开发邮件
-
-## Open Source Notes
-
-This repository is intended to be practical and hackable:
-
-- 你可以直接改搜索策略
-- 你可以替换搜索源
-- 你可以接入 CRM 或自动化流程
-- 你也可以把报告模板改成更适合自己团队的版本
-
-欢迎 PR 和 issue。
-
-## License
-
-Released under the MIT License. See [LICENSE](./LICENSE).
+- 角色固定为 `stage_worker`
+- 默认只允许 attach 到 `Trade Lead Workflow Hub`
+- 不允许独立创建 Base、主表或平行工作容器
 
 ## Attribution
 
