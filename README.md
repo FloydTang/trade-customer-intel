@@ -8,6 +8,8 @@ An open-source Codex skill that turns sparse public-web signals into bilingual, 
 
 角色定位：`客户情报分析员`
 
+这个仓库的开源内容本身即可独立使用，飞书增强入口不是必需安装步骤，而是增强体验选项。
+
 链路角色：
 
 - 在总链路里是 `stage_worker`
