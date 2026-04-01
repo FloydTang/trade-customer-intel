@@ -1,79 +1,75 @@
 # Trade Customer Intel for OpenClaw
 
-OpenClaw-native variant of `trade-customer-intel`.
+这个目录提供 OpenClaw-native 的单节点包装版本，目标不是单独造一套飞书工作容器，而是把这个节点稳定挂到总链路里。
 
-这个版本专门为云端 OpenClaw 设计，不替换仓库根目录的 `classic` 版本，而是单独维护一套运行时边界：
+角色定位：
 
-- 搜索由 `coze-web-search` 执行
-- 页面抓取优先走 `scrapling-official`
-- 抓取失败时降级到 `coze-web-fetch`
-- Python 脚本只负责从结构化证据包生成报告
+- `stage_worker`
+- `客户情报分析员`
 
-## Why This Exists
+当前职责：
 
-原版 `classic` 更适合 Codex / 本地 Python 直跑，内置了 Tavily、DuckDuckGo HTML 和 `r.jina.ai` 风格的执行假设。
+- 接收单条 lead 和 `evidence_bundle`
+- 做公开证据整合和实体判断
+- 输出风险评级、情报报告和客户背调阶段 payload
 
-OpenClaw 版的目标不同：
+## 安装归口说明
 
-- 适应云端工具调用方式
-- 避免把搜索/抓取逻辑硬编码在 Python 里
-- 优先保证失败可降级、输出可持续生成
-- 继续保留原版报告结构和保守风控原则
+当前仓库采用两层结构：
 
-## Runtime Model
+- 根目录 README：公开最小可用说明
+- 当前目录：龙虾 / OpenClaw 的单节点运行说明
+- 这个单节点仓库本身也保留可独立执行的最小功能
 
-OpenClaw 版采用“两段式”流程：
+如果你要把这个节点装进龙虾，优先直接复制增强执行词给龙虾：
 
-1. OpenClaw Skill 负责搜索和抓取
-2. Python 汇总器负责实体判断、信号提取、风险评分和报告渲染
+- [飞书增强入口：复制增强执行词给龙虾](https://evenbetter.feishu.cn/wiki/ADmiwiultihx6Yk1p2UcjfmVn6d)
 
-也就是说，这里的 Python 脚本默认接收的是：
+如果链接打开失败，请使用登记在半斤九两群里的飞书账号打开。
 
-- `lead`
-- `evidence_bundle`
+如果你拿到的是半斤九两科技沟通过的执行包用户链接，也可以优先使用那个链接打开。
 
-而不是直接自己联网检索。
+如果你当前还没有半斤九两科技的账号，需要联系半斤九两科技，请访问：[evenbetter.tech](https://evenbetter.tech)
 
-## Directory Layout
+仓库内源码基线：
 
-```text
-for-openclaw/
-├── SKILL.md
-├── README.md
-├── examples/
-│   └── sample-input.json
-├── references/
-│   ├── report-template.md
-│   └── source-playbook.md
-├── schemas/
-│   ├── lead-input.json
-│   └── evidence-bundle.json
-└── scripts/
-    └── build_customer_intel_report_from_evidence.py
-```
+- `../references/00-单节点增强执行词.md`
+- `./SKILL.md`
 
-## Input Contract
+## Feishu 接入约束
 
-The report builder expects a single JSON payload:
+当前这个 OpenClaw 变体如果要接飞书，默认必须挂到同一个主 Base 下运行。
 
-```json
-{
-  "lead": {
-    "company_name": "Acme Industrial",
-    "person_name": "Jane Smith",
-    "email": "jane@acme-industrial.com",
-    "company_website": "",
-    "country_or_market": "United States",
-    "notes": ""
-  },
-  "evidence_bundle": {
-    "search_results": [],
-    "page_snapshots": [],
-    "search_runs": [],
-    "errors": []
-  }
-}
-```
+固定要求：
+
+- 先查主 Base，再查 `Lead Workflow Master`
+- 客户背调结果只复用同一套 `Customer Intel Docs`
+- 已存在客户背调文档时，只追加版本，不新建平行文档
+- 当前角色固定为 `stage_worker`
+- 当前节点固定 `attach_only`
+- `feishu_container_creation = forbidden`
+
+统一目标：
+
+- 所有数据最终统一挂到 `Trade Lead Workflow Hub`
+- 单节点不独立声明飞书工作容器
+
+## 推荐模型
+
+- `coze/doubao-seed-2-0-pro-260215`
+
+特殊情况：
+
+- 如果上下文特别长，或需要长上下文整合，可临时切到 `coze/kimi-k2-5-260127`
+
+## 会员增强价值
+
+增强层重点不是换业务逻辑，而是减少安装试错：
+
+- 给龙虾一个可以直接复制的单节点执行词
+- 明确这个节点只做证据整合、实体判断和风险评级
+- 明确它只复用 `Customer Intel Docs`
+- 明确失败后要把证据和弱结论交回主代理统一回写
 
 ## Run Locally
 
@@ -84,36 +80,8 @@ python3 ./for-openclaw/scripts/build_customer_intel_report_from_evidence.py \
   --json-out /tmp/customer-intel-openclaw.json
 ```
 
-## OpenClaw Search Order
-
-The OpenClaw skill should search in this order:
-
-1. Official website and domain clues
-2. LinkedIn company page and personal profile
-3. Facebook and Instagram
-4. X / Twitter and YouTube
-5. General web search and news
-
-## Failure Strategy
-
-- Search failures do not block report generation
-- Fetch failures do not block report generation
-- Missing full-page text is acceptable; snippet-only analysis is allowed
-- LinkedIn failures should be recorded, not treated as overall fatal errors
-- Weak evidence must remain weak in the report
-
-## Output Contract
-
-This variant preserves the original report contract:
-
-- Bilingual executive summary
-- Structured identity snapshot
-- Digital footprint summary
-- Conservative risk rating
-- Outreach persona and outreach pack only when evidence supports them
-
 ## Relationship to the Classic Version
 
-- Root `SKILL.md` and `scripts/build_customer_intel_report.py` remain the baseline
-- `for-openclaw/` is a separate implementation track
-- Both versions should stay conceptually aligned on output shape and scoring philosophy
+- 根目录脚本仍然是本仓库 baseline
+- `for-openclaw/` 只是 OpenClaw 适配层
+- 两个版本应保持输出结构和保守边界一致
