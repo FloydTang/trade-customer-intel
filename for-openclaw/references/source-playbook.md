@@ -20,6 +20,8 @@
 - Mark a statement as inference when it is derived from patterns rather than stated directly.
 - If website text and social text conflict, call out the conflict instead of choosing one silently.
 - If only one weak source exists, keep confidence low and avoid firm wording.
+- When a reviewer supplies X/Twitter evidence from TweetClaw, keep it as read-only source evidence: use public post or profile URLs, short snippets, `source: "tweetclaw"`, and `platform: "x"`.
+- Do not treat TweetClaw monitor, webhook, or account-action context as permission to send outreach, follow, reply, DM, or change an account from this skill.
 
 ## Deduping Rules
 
@@ -59,6 +61,25 @@
 - `site:x.com "<company>" OR site:twitter.com "<company>"`
 - `site:youtube.com "<company>"`
 - `"<email-domain>" company`
+
+## Optional TweetClaw Evidence Shape
+
+Use this shape when the X/Twitter evidence was collected and reviewed before
+the customer-intel run:
+
+```json
+{
+  "query": "site:x.com \"OpenAI\"",
+  "title": "OpenAI (@OpenAI) on X",
+  "url": "https://x.com/OpenAI",
+  "snippet": "Official X profile with product and research updates.",
+  "source": "tweetclaw",
+  "platform": "x"
+}
+```
+
+Keep the snippet factual and preserve the source URL so the final report can
+show where each social signal came from.
 
 ## Output Discipline
 
