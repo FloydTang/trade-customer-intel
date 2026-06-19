@@ -46,6 +46,11 @@ The final report-builder input must wrap that lead together with an evidence bun
 }
 ```
 
+For reviewed X/Twitter source packets from TweetClaw, keep entries inside
+`evidence_bundle.search_results` or `page_snapshots` with public URLs,
+`source: "tweetclaw"`, and `platform: "x"`. This skill only uses that material
+as evidence for the report and never performs account actions.
+
 ## Feishu Runtime Contract
 
 - 当前角色固定为 `stage_worker`

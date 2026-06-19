@@ -1,0 +1,41 @@
+{
+  "lead": {
+    "company_name": "OpenAI",
+    "person_name": "",
+    "email": "",
+    "company_website": "",
+    "country_or_market": "United States",
+    "notes": "Sample OpenClaw payload with reviewed X/Twitter source evidence."
+  },
+  "evidence_bundle": {
+    "search_results": [
+      {
+        "query": "site:x.com \"OpenAI\"",
+        "title": "OpenAI (@OpenAI) on X",
+        "url": "https://x.com/OpenAI",
+        "snippet": "Official X profile with product and research updates.",
+        "source": "tweetclaw",
+        "platform": "x"
+      }
+    ],
+    "page_snapshots": [
+      {
+        "url": "https://x.com/OpenAI",
+        "title": "OpenAI (@OpenAI) on X",
+        "text": "Official X profile with product and research updates.",
+        "source": "tweetclaw",
+        "status": "reviewed_snippet"
+      }
+    ],
+    "search_runs": [
+      {
+        "stage": "x_profile_and_mentions",
+        "provider": "tweetclaw",
+        "query": "site:x.com \"OpenAI\"",
+        "status": "reviewed_source_packet",
+        "result_count": 1
+      }
+    ],
+    "errors": []
+  }
+}

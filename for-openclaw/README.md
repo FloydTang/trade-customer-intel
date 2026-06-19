@@ -80,6 +80,15 @@ python3 ./for-openclaw/scripts/build_customer_intel_report_from_evidence.py \
   --json-out /tmp/customer-intel-openclaw.json
 ```
 
+Reviewed X/Twitter evidence can be supplied in the same bundle shape:
+
+```bash
+python3 ./for-openclaw/scripts/build_customer_intel_report_from_evidence.py \
+  --input-json ./for-openclaw/examples/tweetclaw-x-evidence.json \
+  --markdown-out /tmp/customer-intel-openclaw-x.md \
+  --json-out /tmp/customer-intel-openclaw-x.json
+```
+
 ## Relationship to the Classic Version
 
 - 根目录脚本仍然是本仓库 baseline
