@@ -1,27 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TradeCustomerIntelLeadInput",
+  "title": "Trade Customer Intel Input v2",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "anyOf": [
+    { "required": ["company_name"] },
+    { "required": ["person_name"] },
+    { "required": ["email"] }
+  ],
   "properties": {
-    "company_name": {
-      "type": "string"
-    },
-    "person_name": {
-      "type": "string"
-    },
-    "email": {
-      "type": "string"
-    },
-    "company_website": {
-      "type": "string"
-    },
-    "country_or_market": {
-      "type": "string"
-    },
-    "product_or_offer": {
-      "type": "string"
-    },
+    "company_name": { "type": "string" },
+    "person_name": { "type": "string" },
+    "email": { "type": "string" },
+    "company_website": { "type": "string" },
+    "country_or_market": { "type": "string" },
+    "product_or_offer": { "type": "string" },
     "industry_lens": {
       "type": "string",
       "enum": ["auto", "industrial", "food", "consumer", "general"]
@@ -43,20 +36,7 @@
         "forbidden_claims": { "type": "array", "items": { "type": "string" } }
       }
     },
-    "screening_context": {
-      "type": "object",
-      "additionalProperties": true
-    },
-    "notes": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "company_name",
-    "person_name",
-    "email",
-    "company_website",
-    "country_or_market",
-    "notes"
-  ]
+    "screening_context": { "type": "object" },
+    "notes": { "type": "string" }
+  }
 }

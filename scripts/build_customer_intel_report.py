@@ -19,6 +19,19 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = next(
+    (root for root in SCRIPT_DIR.parents if (root / "workflow_runtime" / "customer_intel_v2.py").is_file()),
+    None,
+)
+if REPO_ROOT is None:
+    raise RuntimeError("Could not locate workflow_runtime/customer_intel_v2.py.")
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from workflow_runtime.customer_intel_v2 import upgrade_customer_intel_report
+
 USER_AGENT = "trade-customer-intel/0.1"
 SEARCH_LIMIT = 5
 PHASE2_PLATFORMS = {"linkedin", "instagram", "x", "web"}
@@ -34,6 +47,18 @@ PLATFORMS = {
     "instagram": ("instagram.com",),
     "x": ("x.com", "twitter.com"),
     "youtube": ("youtube.com",),
+}
+RECENT_SIGNAL_KEYWORDS = {
+    "expansion": ("expansion", "expand", "new warehouse", "new facility", "capacity", "扩产", "新仓", "新工厂"),
+    "hiring": ("hiring", "recruit", "career", "job opening", "招聘"),
+    "funding": ("funding", "investment", "raised", "融资", "投资"),
+    "product_launch": ("launch", "new product", "collection", "发布", "新品"),
+    "channel_change": ("distributor", "retail", "market entry", "partnership", "渠道", "合作"),
+}
+MARKET_SIGNAL_KEYWORDS = {
+    "compliance": ("regulation", "directive", "compliance", "standard", "certification", "合规", "指令", "认证"),
+    "tariff": ("tariff", "duty", "anti-dumping", "customs duty", "关税", "反倾销"),
+    "trade_policy": ("trade agreement", "free trade", "import rule", "export rule", "贸易协定", "进口规则"),
 }
 
 
@@ -55,13 +80,17 @@ def load_input(path: str | None) -> dict[str, Any]:
     return {}
 
 
-def normalize_input(data: dict[str, Any]) -> dict[str, str]:
+def normalize_input(data: dict[str, Any]) -> dict[str, Any]:
     normalized = {
         "company_name": str(data.get("company_name", "")).strip(),
         "person_name": str(data.get("person_name", "")).strip(),
         "email": str(data.get("email", "")).strip(),
         "company_website": str(data.get("company_website", "")).strip(),
         "country_or_market": str(data.get("country_or_market", "")).strip(),
+        "product_or_offer": str(data.get("product_or_offer", "")).strip(),
+        "industry_lens": str(data.get("industry_lens", "auto")).strip() or "auto",
+        "seller_context": data.get("seller_context") if isinstance(data.get("seller_context"), dict) else {},
+        "screening_context": data.get("screening_context") if isinstance(data.get("screening_context"), dict) else {},
         "notes": str(data.get("notes", "")).strip(),
     }
     if not any(normalized[key] for key in ("company_name", "person_name", "email")):
@@ -197,6 +226,10 @@ def build_queries(data: dict[str, str], domain: str) -> list[str]:
         queries.append(f'"{person}" linkedin')
     if data["country_or_market"] and company:
         queries.append(f'"{company}" "{data["country_or_market"]}"')
+        queries.append(f'"{company}" "{data["country_or_market"]}" news expansion hiring')
+    if data["country_or_market"] and (data.get("product_or_offer") or data.get("notes")):
+        product_hint = data.get("product_or_offer") or data.get("notes", "")[:80]
+        queries.append(f'"{data["country_or_market"]}" {product_hint} regulation tariff trade agreement')
     return list(dict.fromkeys(query for query in queries if query.strip()))
 
 
@@ -262,6 +295,115 @@ def extract_topic_signals(results: list[SearchResult], snapshots: dict[str, str]
                 "title": token,
                 "why_it_matters": f"该主题在公开内容中重复出现 {count} 次，可作为业务沟通切入角度。",
                 "confidence": "medium" if count < 4 else "high",
+            }
+        )
+    return signals[:5]
+
+
+def detect_signal_type(text: str, keyword_map: dict[str, tuple[str, ...]]) -> str:
+    lower = text.lower()
+    for signal_type, keywords in keyword_map.items():
+        if any(keyword.lower() in lower for keyword in keywords):
+            return signal_type
+    return ""
+
+
+def extract_observed_period(text: str) -> str:
+    patterns = [
+        r"\b20\d{2}\s*Q[1-4]\b",
+        r"\b20\d{2}[-/](?:0?[1-9]|1[0-2])(?:[-/]\d{1,2})?\b",
+        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+20\d{2}\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            return match.group(0)
+    return "unknown"
+
+
+def signal_confidence(platform: str, text: str) -> str:
+    if platform in {"linkedin", "web"} and len(text) > 80:
+        return "medium"
+    if len(text) > 180:
+        return "medium"
+    return "low"
+
+
+def extract_recent_signals(
+    results: list[SearchResult],
+    snapshots: dict[str, str],
+    product_or_offer: str,
+) -> list[dict[str, str]]:
+    signals: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in results:
+        platform = classify_platform(item.url)
+        snapshot = snapshots.get(item.url, "")
+        text = " ".join(part for part in [item.title, item.snippet, snapshot[:500]] if part)
+        signal_type = detect_signal_type(text, RECENT_SIGNAL_KEYWORDS)
+        if not signal_type:
+            continue
+        key = f"{signal_type}:{item.url}"
+        if key in seen:
+            continue
+        seen.add(key)
+        title = item.title or f"{signal_type} signal"
+        signals.append(
+            {
+                "signal_type": signal_type,
+                "title": title,
+                "source_title": item.title,
+                "source_url": item.url,
+                "source_type": platform,
+                "observed_at_or_period": extract_observed_period(text),
+                "freshness": "recent_or_needs_date_check" if extract_observed_period(text) != "unknown" else "unknown",
+                "confidence": signal_confidence(platform, text),
+                "why_it_matters": "这是客户近期动态，可作为开发信切入点，但需要人工确认是否仍然有效。",
+                "product_relevance": (
+                    f"需要结合 {product_or_offer} 判断是否能承接对方近期变化。"
+                    if product_or_offer
+                    else "需要结合我方产品判断是否能承接对方近期变化。"
+                ),
+            }
+        )
+    return signals[:5]
+
+
+def extract_market_signals(
+    results: list[SearchResult],
+    snapshots: dict[str, str],
+    country_or_market: str,
+    product_or_offer: str,
+) -> list[dict[str, str]]:
+    signals: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in results:
+        text = " ".join(part for part in [item.title, item.snippet, snapshots.get(item.url, "")[:500]] if part)
+        signal_type = detect_signal_type(text, MARKET_SIGNAL_KEYWORDS)
+        if not signal_type:
+            continue
+        if country_or_market and country_or_market.lower() not in text.lower() and signal_type != "tariff":
+            continue
+        key = f"{signal_type}:{item.url}"
+        if key in seen:
+            continue
+        seen.add(key)
+        signals.append(
+            {
+                "signal_type": signal_type,
+                "title": item.title or f"{signal_type} market signal",
+                "source_title": item.title,
+                "source_url": item.url,
+                "source_type": classify_platform(item.url),
+                "observed_at_or_period": extract_observed_period(text),
+                "freshness": "recent_or_needs_date_check" if extract_observed_period(text) != "unknown" else "unknown",
+                "confidence": signal_confidence(classify_platform(item.url), text),
+                "why_it_matters": "这是目标市场或行业环境信号，可能影响采购关注点、合规要求或供应商选择。",
+                "product_relevance": (
+                    f"需要判断该变化是否影响 {product_or_offer} 的采购、认证、报价或交付。"
+                    if product_or_offer
+                    else "需要判断该变化是否影响客户采购、认证、报价或交付。"
+                ),
             }
         )
     return signals[:5]
@@ -435,8 +577,31 @@ def build_personalized_outreach_pack(
     }
 
 
-def build_sales_angles(signals: list[dict[str, str]], company_summary: str) -> list[dict[str, str]]:
+def build_sales_angles(
+    signals: list[dict[str, str]],
+    company_summary: str,
+    recent_signals: list[dict[str, str]] | None = None,
+    market_signals: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
     angles: list[dict[str, str]] = []
+    for signal in (recent_signals or [])[:2]:
+        angles.append(
+            {
+                "cn": f"优先围绕近期信号“{signal['title']}”切入，先引用来源和时间，再承接我方产品/服务能解决的问题。",
+                "en": f"Open with the recent signal '{signal['title']}' and connect it cautiously to a specific operational or sourcing need.",
+                "why": signal["why_it_matters"],
+                "avoid": "不要把近期信号写成确定需求，发送前确认来源、时间和语境。",
+            }
+        )
+    for signal in (market_signals or [])[:1]:
+        angles.append(
+            {
+                "cn": f"可从目标市场变化“{signal['title']}”切入，讨论合规、关税、交付或供应稳定性。",
+                "en": f"Use the market signal '{signal['title']}' as context, then ask whether it affects their sourcing or compliance priorities.",
+                "why": signal["why_it_matters"],
+                "avoid": "不要给法律、关税或合规结论，只能作为业务沟通背景。",
+            }
+        )
     if company_summary:
         angles.append(
             {
@@ -492,6 +657,9 @@ def entity_confidence(data: dict[str, str], website: str, results: list[SearchRe
     return "low"
 
 
+SIEGER_NO_COVERAGE = "公开来源未覆盖"
+
+
 def build_report(data: dict[str, str], results: list[SearchResult], snapshots: dict[str, str]) -> dict[str, Any]:
     domain = extract_domain(data["email"]) or website_to_domain(data["company_website"])
     website = choose_website(data, results, domain)
@@ -527,8 +695,16 @@ def build_report(data: dict[str, str], results: list[SearchResult], snapshots: d
         ambiguity_notes.append("未能稳定识别官网，企业主体可能需要人工二次确认。")
 
     signals = extract_topic_signals(results, snapshots)
+    recent_signals = extract_recent_signals(results, snapshots, data.get("product_or_offer", ""))
+    market_signals = extract_market_signals(
+        results,
+        snapshots,
+        data["country_or_market"],
+        data.get("product_or_offer", ""),
+    )
     rating, risk_reasons = risk_rating(data, website, results, snapshots)
-    sales_angles = build_sales_angles(signals, company_summary)
+    entity_level = entity_confidence(data, website, results)
+    sales_angles = build_sales_angles(signals, company_summary, recent_signals, market_signals)
     platform_map = collect_platform_evidence(results, snapshots)
     phase_2_status, outreach_persona_card = build_outreach_persona_card(
         rating,
@@ -544,16 +720,46 @@ def build_report(data: dict[str, str], results: list[SearchResult], snapshots: d
         data["person_name"],
     )
     missing_fields = [key for key in ("company_name", "person_name", "email") if not data[key]]
+    generated_at = datetime.now(timezone.utc).isoformat()
+    v2_sections = upgrade_customer_intel_report(
+        lead=data,
+        raw_evidence=evidence,
+        company_summary=company_summary,
+        official_website=website,
+        recent_signals=recent_signals,
+        market_signals=market_signals,
+        sales_angles=sales_angles,
+        risk_rating=rating,
+        risk_reasons=risk_reasons,
+        entity_confidence=entity_level,
+        ambiguity_notes=ambiguity_notes,
+        generated_at=generated_at,
+    )
+    intel_decision = v2_sections["intel_decision"]
+    sales_angles = v2_sections["sales_angles"]
+    unconfirmed_fact_list = list(ambiguity_notes)
+    if intel_decision.get("evidence_sufficiency") != "sufficient":
+        unconfirmed_fact_list.append("公开证据仍不足以支持强个性化判断，进入开发信前需人工确认。")
+    if rating == "High":
+        unconfirmed_fact_list.append("当前风险评级为 High，不建议直接进入开发信。")
 
     summary_cn_parts = [
         f"当前线索更像是{data['company_name'] or '一个待确认的公司主体'}",
         f"公开网络足迹主要集中在{', '.join(sorted({f['platform'] for f in footprints})) or '官网/通用网页'}。",
-        "建议优先围绕其公开业务方向和近期内容主题切入，再决定是否进入深度报价或样品沟通。",
+        (
+            "建议优先围绕其公开业务方向和近期内容主题切入，再决定是否进入深度报价或样品沟通。"
+            if intel_decision["recommended_next_action"] == "ready_for_email_draft"
+            else "当前应先做人工复核或补证据，再决定是否进入开发信。"
+        ),
     ]
     summary_en_parts = [
         f"The lead most likely maps to {data['company_name'] or 'a still-unconfirmed company entity'}.",
         f"The strongest public footprint appears on {', '.join(sorted({f['platform'] for f in footprints})) or 'the website and general web results'}.",
-        "Lead with a relevant business angle grounded in public evidence before moving to pricing or sample discussions.",
+        (
+            "Lead with a relevant business angle grounded in public evidence before moving to pricing or sample discussions."
+            if intel_decision["recommended_next_action"] == "ready_for_email_draft"
+            else "Pause before outreach and manually verify the entity match and evidence gaps."
+        ),
     ]
 
     return {
@@ -567,7 +773,7 @@ def build_report(data: dict[str, str], results: list[SearchResult], snapshots: d
             "email_domain": domain or None,
             "website": website or None,
             "country_or_market": data["country_or_market"] or None,
-            "entity_confidence": entity_confidence(data, website, results),
+            "entity_confidence": entity_level,
             "ambiguity_notes": ambiguity_notes,
         },
         "company_profile": {
@@ -578,16 +784,91 @@ def build_report(data: dict[str, str], results: list[SearchResult], snapshots: d
         },
         "digital_footprint": footprints,
         "interest_signals": signals,
+        "recent_signals": recent_signals,
+        "market_signals": market_signals,
         "sales_angles": sales_angles,
         "risk_rating": rating,
         "risk_reasons": risk_reasons,
+        "intel_decision": intel_decision,
+        "unconfirmed_fact_list": unconfirmed_fact_list,
         "phase_2_status": phase_2_status,
         "outreach_persona_card": outreach_persona_card,
         "personalized_outreach_pack": personalized_outreach_pack,
         "evidence": evidence[:15],
         "notes": data["notes"] or None,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at,
+        **v2_sections,
     }
+
+
+def render_sieger_sections(report: dict[str, Any]) -> list[str]:
+    verdict = report.get("verdict_card") or {}
+    business = report.get("company_business_breakdown") or {}
+    tech = report.get("tech_capability_procurement_concerns") or {}
+    scale = report.get("scale_financial_signals") or {}
+    sales_model = report.get("sales_model_procurement_logic") or {}
+    competition = report.get("competition_map") or {}
+    growth = report.get("growth_opportunities") or []
+    score_display = verdict.get("score") if verdict.get("score") is not None else "未评分"
+    lines = [
+        "",
+        "## Verdict Card（结论先看）",
+        "",
+        f"- 综合开发价值：{score_display}/10（{verdict.get('score_basis', SIEGER_NO_COVERAGE)}）",
+        f"- 客户分级：{verdict.get('customer_grade', '未覆盖')}；{verdict.get('grade_reason', SIEGER_NO_COVERAGE)}",
+        f"- Intel Decision：{verdict.get('intel_decision', 'needs_manual_review')}",
+        f"- 一句话总评：{verdict.get('one_line_verdict', SIEGER_NO_COVERAGE)}",
+    ]
+    for dimension in verdict.get("dimensions") or []:
+        lines.append(f"- {dimension.get('name', '维度')}：{dimension.get('display', dimension.get('rating', SIEGER_NO_COVERAGE))}；依据：{dimension.get('basis', SIEGER_NO_COVERAGE)}")
+    for item in verdict.get("review_focus") or []:
+        lines.append(f"- 人工复核：{item}")
+
+    lines.extend(["", "## Company Profile & Business Breakdown（业务拆解）", ""])
+    for business_line in business.get("business_lines") or []:
+        lines.append(f"- 业务线：{business_line.get('name', SIEGER_NO_COVERAGE)}")
+        lines.append(f"  代表产品/描述：{'；'.join(business_line.get('representative_products') or [SIEGER_NO_COVERAGE])}")
+        lines.append(f"  客户类型：{business_line.get('customer_types', SIEGER_NO_COVERAGE)}")
+        if business_line.get("evidence_refs"):
+            lines.append(f"  来源：{'；'.join(business_line['evidence_refs'])}")
+    facts = business.get("entity_facts") or {}
+    for label, key in (("注册与实体", "registration_and_entity"), ("地址差异", "address_notes"), ("厂房/研发设施", "facilities"), ("管理层背景", "management_background")):
+        lines.append(f"- {label}：{facts.get(key, SIEGER_NO_COVERAGE)}")
+    judgment = business.get("business_model_judgment") or {}
+    lines.append(f"- 商业模式判断：{judgment.get('value', SIEGER_NO_COVERAGE)}（{judgment.get('basis', SIEGER_NO_COVERAGE)}）")
+
+    lines.extend(["", "## Tech Capability & Procurement Concerns（技术能力与采购关注点）", ""])
+    lines.append(f"- 技术栈：{tech.get('technical_stack', SIEGER_NO_COVERAGE)}；依据：{tech.get('technical_stack_basis', SIEGER_NO_COVERAGE)}")
+    for concern in tech.get("procurement_concerns") or []:
+        lines.append(f"- 采购关注点：{concern.get('item', SIEGER_NO_COVERAGE)} — {concern.get('assessment', SIEGER_NO_COVERAGE)}（优先级：{concern.get('priority', '待确认')}）")
+    lines.append(f"- 对我方最关键：{tech.get('most_important_for_us', SIEGER_NO_COVERAGE)}")
+
+    lines.extend(["", "## Scale & Financial Signals（规模与财务信号）", ""])
+    lines.append(f"- 营收：{scale.get('revenue', '公开免费来源未覆盖')}")
+    lines.append(f"- 员工数：{scale.get('employee_count', '公开免费来源未覆盖')}")
+    lines.append(f"- 经营趋势：{scale.get('operating_trend', SIEGER_NO_COVERAGE)}")
+    lines.append(f"- 采购行为解读：{scale.get('procurement_behavior_interpretation', SIEGER_NO_COVERAGE)}")
+    lines.append(f"- 人工补查入口：{scale.get('manual_check_entry', SIEGER_NO_COVERAGE)}")
+
+    lines.extend(["", "## Sales Model & Procurement Logic（销售模式与采购逻辑）", ""])
+    lines.append(f"- 销售模式：{sales_model.get('sales_model', SIEGER_NO_COVERAGE)}")
+    lines.append(f"- 典型销售周期：{sales_model.get('sales_cycle', SIEGER_NO_COVERAGE)}")
+    lines.append(f"- 供应商进入点：{sales_model.get('supplier_entry_point', SIEGER_NO_COVERAGE)}")
+    lines.append(f"- 依据：{sales_model.get('basis', SIEGER_NO_COVERAGE)}")
+
+    lines.extend(["", "## Competition Map（竞争对手图谱）", ""])
+    competitors = competition.get("potential_competitors") or []
+    lines.append(f"- 潜在竞争集合：{'；'.join(str(item) for item in competitors) if competitors else SIEGER_NO_COVERAGE}")
+    lines.append(f"- 注记：{competition.get('note', '公开来源未覆盖；不做一一对应宣称。')}")
+
+    lines.extend(["", "## Growth Opportunities（增长机会）", ""])
+    if growth:
+        for opportunity in growth:
+            lines.append(f"- {opportunity.get('opportunity', SIEGER_NO_COVERAGE)}")
+            lines.append(f"  逻辑：{opportunity.get('logic', SIEGER_NO_COVERAGE)}；状态：{opportunity.get('status', '需人工验证')}")
+    else:
+        lines.append(f"- {SIEGER_NO_COVERAGE}")
+    return lines
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -599,6 +880,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Generated at: {report['generated_at']}",
         f"- Missing input fields: {', '.join(report['missing_input_fields']) or 'none'}",
         f"- Phase 2 status: {report.get('phase_2_status', 'skipped')}",
+        f"- Evidence sufficiency: {(report.get('intel_decision') or {}).get('evidence_sufficiency', 'unknown')}",
+        f"- Recommended next action: {(report.get('intel_decision') or {}).get('recommended_next_action', 'unknown')}",
     ]
     if len(report["evidence"]) < 4:
         lines.append("- Confidence note: 证据较少，建议人工补充验证。")
@@ -625,10 +908,25 @@ def render_markdown(report: dict[str, Any]) -> str:
     for note in identity["ambiguity_notes"]:
         lines.append(f"- Ambiguity note: {note}")
 
+    decision_brief = report.get("decision_brief") or {}
+    lines.extend(["", "## Decision Brief", ""])
+    lines.append(f"- Decision: {decision_brief.get('decision', 'hold_for_manual_review')}")
+    lines.append(f"- Next action: {decision_brief.get('next_action', '补证据后再判断。')}")
+    for gate_name, gate in (decision_brief.get("decision_gates") or {}).items():
+        lines.append(f"- Gate {gate_name}: {gate.get('status', 'unknown')} - {gate.get('reason', '')}")
+
+    lines.extend(render_sieger_sections(report))
+
     lines.extend(
         [
             "",
-            "## Company Profile",
+            "## Intel Decision",
+            "",
+            f"- Evidence sufficiency: {report['intel_decision']['evidence_sufficiency']}",
+            f"- Recommended next action: {report['intel_decision']['recommended_next_action']}",
+            f"- Manual review required: {report['intel_decision']['manual_review_required']}",
+            "",
+            "## Company Profile（兼容字段视图）",
             "",
             f"- Apparent business: {company['apparent_business']}",
             f"- Website quality: {company['website_quality']}",
@@ -659,16 +957,49 @@ def render_markdown(report: dict[str, Any]) -> str:
     else:
         lines.append("- No durable topic signal identified yet.")
 
-    lines.extend(["", "## Sales Angles", ""])
+    lines.extend(["", "## Recent Customer Signals", ""])
+    if report.get("recent_signals"):
+        for signal in report["recent_signals"]:
+            lines.append(
+                f"- {signal['title']} ({signal['signal_type']}, freshness: {signal['freshness']}, confidence: {signal['confidence']})"
+            )
+            lines.append(f"  Source: {signal['source_title']} - {signal['source_url']}")
+            lines.append(f"  Why it matters: {signal['why_it_matters']}")
+            lines.append(f"  Product relevance: {signal['product_relevance']}")
+    else:
+        lines.append("- No recent customer signal confirmed in this pass.")
+
+    lines.extend(["", "## Market & Compliance Signals", ""])
+    if report.get("market_signals"):
+        for signal in report["market_signals"]:
+            lines.append(
+                f"- {signal['title']} ({signal['signal_type']}, freshness: {signal['freshness']}, confidence: {signal['confidence']})"
+            )
+            lines.append(f"  Source: {signal['source_title']} - {signal['source_url']}")
+            lines.append(f"  Why it matters: {signal['why_it_matters']}")
+            lines.append(f"  Product relevance: {signal['product_relevance']}")
+    else:
+        lines.append("- No market or compliance signal confirmed in this pass.")
+
+    lines.extend(["", "## Sales Angles（切入策略）", ""])
     for angle in report["sales_angles"]:
         lines.extend(
             [
-                f"- 中文建议：{angle['cn']}",
-                f"  English angle: {angle['en']}",
-                f"  Why: {angle['why']}",
-                f"  Avoid: {angle['avoid']}",
+                f"- 中文建议：{angle.get('cn', SIEGER_NO_COVERAGE)}",
+                f"  English angle: {angle.get('en', SIEGER_NO_COVERAGE)}",
+                f"  Why: {angle.get('why', SIEGER_NO_COVERAGE)}",
+                f"  Why this angle fits: {angle.get('why_this_angle_fits', angle.get('why', SIEGER_NO_COVERAGE))}",
+                f"  Buyer/component clue: {angle.get('buyer_or_component_clue', SIEGER_NO_COVERAGE)}",
+                f"  Replacement point: {angle.get('replacement_point', SIEGER_NO_COVERAGE)}",
+                f"  Authorized materials: {'; '.join(angle.get('authorized_materials') or []) or SIEGER_NO_COVERAGE}",
+                f"  Evidence refs: {'; '.join(angle.get('evidence_refs') or []) or SIEGER_NO_COVERAGE}",
+                f"  Avoid: {angle.get('avoid', SIEGER_NO_COVERAGE)}",
             ]
         )
+
+    lines.extend(["", "## Unconfirmed Facts", ""])
+    for item in report.get("unconfirmed_fact_list") or []:
+        lines.append(f"- {item}")
 
     lines.extend(["", "## Outreach Persona Card", ""])
     persona = report.get("outreach_persona_card")
@@ -717,7 +1048,34 @@ def render_markdown(report: dict[str, Any]) -> str:
     for reason in report["risk_reasons"]:
         lines.append(f"- Reason: {reason}")
 
-    lines.extend(["", "## Evidence", ""])
+    image_summary = report.get("image_summary") or {}
+    image_score = image_summary.get("score") if image_summary.get("score") is not None else "未评分"
+    lines.extend(
+        [
+            "",
+            "## 画像总结（收尾）",
+            "",
+            f"- 顾问式总结：{image_summary.get('summary_cn', SIEGER_NO_COVERAGE)}",
+            f"- 综合开发价值：{image_score}/10；客户分级：{image_summary.get('customer_grade', '未覆盖')}",
+            f"- 最大机会：{image_summary.get('maximum_opportunity', SIEGER_NO_COVERAGE)}",
+            f"- 最大风险：{image_summary.get('maximum_risk', SIEGER_NO_COVERAGE)}",
+            f"- 策略：{image_summary.get('strategy', SIEGER_NO_COVERAGE)}",
+        ]
+    )
+
+    lines.extend(["", "## Claim Ledger", ""])
+    for item in report.get("claim_ledger") or []:
+        lines.append(
+            f"- {item['claim_id']} [{item['statement_type']}/{item['confidence']}] "
+            f"{item['statement']} -> {', '.join(item['evidence_ids']) or 'no evidence'}"
+        )
+    lines.extend(["", "## Evidence Ledger", ""])
+    for item in report.get("evidence_ledger") or []:
+        lines.append(
+            f"- {item['evidence_id']} [{item['source_quality']}/{item['confidence']}] "
+            f"{item['title']}: {item['url'] or '(no url)'}"
+        )
+    lines.extend(["", "## Evidence（兼容字段视图）", ""])
     for item in report["evidence"]:
         lines.append(f"- {item['title']}: {item['url']} ({item['source_type']})")
         if item["note"]:
